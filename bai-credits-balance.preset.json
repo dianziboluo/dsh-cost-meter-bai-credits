@@ -1,0 +1,151 @@
+{
+  "schema": "dsh-cost-meter.custom-balance-preset/1",
+  "id": "b-ai-credits",
+  "title": {
+    "en": "Show B.AI Credits balance in dsh-cost-meter",
+    "zh": "在 dsh-cost-meter 中显示 B.AI 代币余额（Credits）"
+  },
+  "description": {
+    "en": "Displays the B.AI account balance as integer Credits (the platform's native unit) in dsh-cost-meter's sidebar card and Cost settings row. No division, no FX conversion.",
+    "zh": "把 B.AI 账户余额按整数 Credits（平台原生单位）显示在 dsh-cost-meter 的侧边栏卡片与费用设置页；不做除法、不做汇率折算。"
+  },
+  "requires": {
+    "plugin": "dsh-cost-meter",
+    "pluginVersion": ">=1.7.0",
+    "verifiedWith": "1.7.40"
+  },
+  "sources": {
+    "balanceApi": "https://docs.b.ai/zh-Hans/llmservice/api/balance/",
+    "pricing": "https://docs.b.ai/zh-Hans/llmservice/pricing-and-usage/",
+    "invitationRewards": "https://docs.b.ai/zh-Hans/llmservice/invitation-rewards/",
+    "plugin": "https://github.com/Han-1413141/dsh-cost-meter",
+    "docs": {
+      "en": "./bai-credits-balance.md",
+      "zh": "./bai-credits-balance.zh-CN.md"
+    }
+  },
+  "unitNotes": {
+    "native": "data.personal_balance is an integer Credits count. 1 USD = 1,000,000 Credits (billing rate); 1 Coin = 1,000,000 Credits (Coin -> Credits exchange). Credits have no CNY peg.",
+    "rendering": "With unit CREDITS the plugin prints the plain number plus the suffix ' Credits' (no currency symbol, trailing zeros trimmed, no thousands separator)."
+  },
+  "defaultVariant": "credits",
+  "variants": {
+    "credits": {
+      "label": {
+        "en": "Native Credits (recommended)",
+        "zh": "平台原生 Credits（推荐）"
+      },
+      "entry": {
+        "enabled": true,
+        "display": "both",
+        "refreshMinutes": 15,
+        "label": "B.AI 余额",
+        "labelEn": "B.AI Balance",
+        "unit": "CREDITS",
+        "convertToDisplayCurrency": false,
+        "request": {
+          "url": "https://api.b.ai/v1/balance",
+          "method": "GET",
+          "headers": {
+            "Authorization": "Bearer {{BAI_API_KEY}}"
+          }
+        },
+        "extract": {
+          "remaining": "data.personal_balance",
+          "unit": "CREDITS"
+        },
+        "allowedHosts": ["api.b.ai"]
+      }
+    },
+    "usdEquivalent": {
+      "label": {
+        "en": "USD equivalent (optional, derived: 1 USD = 1,000,000 Credits)",
+        "zh": "美元等值（可选，派生值：1 USD = 1,000,000 Credits）"
+      },
+      "entry": {
+        "enabled": true,
+        "display": "both",
+        "refreshMinutes": 15,
+        "label": "B.AI 等值美元",
+        "labelEn": "B.AI (USD equivalent)",
+        "unit": "USD",
+        "convertToDisplayCurrency": false,
+        "request": {
+          "url": "https://api.b.ai/v1/balance",
+          "method": "GET",
+          "headers": {
+            "Authorization": "Bearer {{BAI_API_KEY}}"
+          }
+        },
+        "extract": {
+          "remaining": {
+            "op": "divide",
+            "path": "data.personal_balance",
+            "by": 1000000
+          },
+          "unit": "USD"
+        },
+        "allowedHosts": ["api.b.ai"]
+      }
+    }
+  },
+  "apply": {
+    "path": "storages/cost-meter/ledger.json",
+    "pathBase": "DSH_HOME",
+    "pointer": "/config/customBalances/-",
+    "maxEntries": 8,
+    "requiresRestart": false,
+    "preserveCredentialBinding": true,
+    "identityFields": ["request.url", "unit"],
+    "identityMatch": "exact, case-insensitive; trailing slashes on request.url ignored",
+    "requiresCredential": ["BAI_API_KEY"],
+    "steps": [
+      "Resolve DSH_HOME (defaults to ~/.dsh) and the ledger path from apply.path.",
+      "Read and parse the ledger JSON; abort if the array named by apply.pointer already holds maxEntries entries and no entry matches apply.identityFields.",
+      "Back up ledger.json next to itself with a timestamp suffix.",
+      "Update the matching entry in place, or append the new one; keep every {{VAR}} placeholder literal.",
+      "When updating, carry the existing entry's credential-header placeholder over (preserveCredentialBinding) so a working key binding is never silently re-pointed.",
+      "Write via temp file + rename.",
+      "Report which placeholders already resolve from the credential store or the environment; if one is missing, tell the user to paste the key into the plugin's Credential input, then refresh the browser page."
+    ]
+  },
+  "credential": {
+    "placeholder": "{{BAI_API_KEY}}",
+    "namingConvention": "<ROUTE>_API_KEY, where <ROUTE> is the provider id on Settings -> Models (uppercased, non-alphanumerics replaced by _). Reuse the same variable name as an existing B.AI model provider to share one stored key.",
+    "howToStore": [
+      "Preferred: the plugin's Credential input box on the entry (write-only, stored in the DSH credential store).",
+      "Alternative: the DSH credential store, whose shape is a nested mapping (2+ spaces of indentation under refs:), e.g. `version: 1` / `refs:` / `  BAI_API_KEY: <key>` — never commit that file.",
+      "Fallback: the BAI_API_KEY environment variable in the process running DSH."
+    ],
+    "neverCommit": "Never place a literal API key in ledger.json, this preset, or any commit."
+  },
+  "verification": {
+    "request": "GET https://api.b.ai/v1/balance",
+    "authAlternatives": ["Authorization: Bearer <key>", "x-api-key: <key>"],
+    "successField": "Use the top-level `success` field, not the HTTP status: a failed lookup can be HTTP 200 with success=false.",
+    "personalResponseShape": {
+      "success": true,
+      "message": "",
+      "data": {
+        "user_id": "<redacted>",
+        "api_key_type": "personal",
+        "timestamp": 0,
+        "personal_balance": 12345678,
+        "active_status": "active"
+      }
+    }
+  },
+  "teamKeys": {
+    "supported": false,
+    "reason": "Team keys omit data.personal_balance. member_quota_limit is present only when quota_limit_type === \"limited\"; team_balance only for the admin role. Untested, derived from the API docs.",
+    "extractExample": {
+      "remaining": {
+        "op": "subtract",
+        "paths": ["data.team.member_quota_limit", "data.team.member_quota_used"]
+      },
+      "maxBudget": "data.team.member_quota_limit",
+      "spend": "data.team.member_quota_used",
+      "unit": "CREDITS"
+    }
+  }
+}
